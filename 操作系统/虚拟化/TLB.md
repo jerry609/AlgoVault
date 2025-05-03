@@ -1,4 +1,6 @@
-## 问题
+@[toc]
+
+### 问题
 使用分页作为核心机制来实现虚拟内存，可能会带来较高的性能开销。因为要使用分页，就要将内存地址空间切分成大量固定大小的单元（页）​，并且需要记录这些单元的地址映射信息。因为这些映射信息一般存储在物理内存中，所以在转换虚拟地址时，==分页逻辑上需要一次额外的内存访问。==每次指令获取、显式加载或保存，都要额外读一次内存以得到转换信息，这慢得无法接受。
 
 为了找到一个虚拟地址对应的实际物理内存地址，处理器（或内存管理单元 MMU）需要先去查询一个存储在内存中的“地图”（页表），这个查询本身就是一次内存访问，然后才能根据查到的信息去访问真正想要的数据所在的物理内存地址。
@@ -51,13 +53,13 @@
 ### 解决思路
 
 使用TLB
-![image.png](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250503154815268.png)
+![image.png](https://i-blog.csdnimg.cn/img_convert/0497d9f9b698c2989116f1cc336ea480.png)
 地址转换旁路缓冲存储器（translation-lookaside buffer）
 
-![image.png](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250503153807272.png)
+![image.png](https://i-blog.csdnimg.cn/img_convert/46ded25d27a543bb72d585b0a599b763.png)
 
 **基本算法**
-![image.png](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250503155322866.png)
+![image.png](https://i-blog.csdnimg.cn/img_convert/3f05ee1432bc8c60dc7d96488c5cfa87.png)
 
 ```c++
 1 VPN = (VirtualAddress & VPN_MASK) >> SHIFT 
@@ -573,7 +575,7 @@ int main(int argc, char *argv[]) {
 
 ```
 
-![image.png](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250503155758404.png)
+![image.png](https://i-blog.csdnimg.cn/img_convert/822b1663e8367718a813e6bcd2e4033d.png)
 **运行 1:**
 - `./tlb 1024 100`
 - 访问页数：1024
@@ -606,4 +608,104 @@ int main(int argc, char *argv[]) {
 - TLB 和缓存是提高虚拟内存性能的关键机制，保持程序的工作集尽可能小以适应这些硬件缓存，对于性能优化至关重要。
 
 
-还有一个需要注意的地方，今天的计算机系统大多有多个CPU，每个CPU当然有自己的TLB结构。为了得到准确的测量数据，我们需要只在一个CPU上运行程序，避免调度器把进程从一个CPU调度到另一个去运行。如何做到？​（提示：在Google上搜索“pinning a thread”相关的信息）如果没有这样做，代码从一个CPU移到了另一个，会发生什么情况？
+### 如果将 `tlb` 测试程序从一个 CPU 核心迁移到另一个 CPU 核心，会发生什么？
+
+**问题：** 如果操作系统调度器在程序运行过程中，将我们的 `tlb` 测试程序从一个 CPU 核心迁移到另一个 CPU 核心，会发生什么？
+
+**答案：TLB 状态丢失与性能测量失准。**
+
+具体来说：
+
+1.  **TLB 是 Core 私有的:** 当 `tlb` 程序在 CPU 核心 0 上运行时，它访问的页的地址翻译信息会被缓存到 CPU 核心 0 的 TLB 中。如果程序的工作集较小（例如之前的 1024 页测试），TLB 命中率会很高。
+2.  **迁移发生:** 假设操作系统调度器决定将 `tlb` 程序迁移到 CPU 核心 1 上运行。
+3.  **冷启动 TLB:** CPU 核心 1 的 TLB 对于 `tlb` 程序来说是 **“冷”** 的。它里面并没有缓存程序之前在核心 0 上访问过的那些页的翻译信息。
+4.  **TLB Miss 激增:** 当 `tlb` 程序在核心 1 上继续运行时，它访问的第一个（或前几个）页几乎肯定会导致 **TLB Miss**，因为核心 1 的 TLB 需要重新去内存中的页表查询这些地址的翻译。
+5.  **重复的 TLB 填充:** 如果程序在核心 0 和核心 1 之间来回切换，那么每次切换到一个新的核心，都会经历一次 TLB “冷启动”的过程，导致 TLB Miss 比正常情况下（固定在一个核心上运行）要多得多。
+6.  **测量结果失真:** 由于 TLB Miss 的代价远高于 TLB Hit（需要执行 Page Walk，访问内存），这种频繁的、由于 CPU 迁移导致的额外 TLB Miss 会显著**拉高平均每次访问页的耗时**。这使得我们测得的时间**不再能准确反映**固定在一个 CPU 上时、特定工作集大小下的真实 TLB 性能，而是混杂了大量 CPU 迁移带来的 TLB 失效和重新填充的开销。
+
+**如何解决：将进程/线程固定（Pinning）到特定 CPU 核心**
+
+为了避免上述问题，确保测量数据的准确性（尤其是在研究缓存和 TLB 行为时），我们需要告诉操作系统调度器：“请将这个程序（或其线程）**固定**在某一个（或某几个特定）CPU 核心上运行，不要随意迁移它。” 这个过程通常称为 **设置 CPU 亲和性 (CPU Affinity)** 或 **线程绑定/固定 (Thread Pinning/Binding)**。
+
+**实现方法（Linux/POSIX 系统）：**
+
+* **命令行工具 `taskset`:** 这是最简单的方法，可以在启动程序时或对已运行的程序设置其 CPU 亲和性。
+    * 例如，将程序 `./tlb 1024 100` 固定到 CPU 核心 0 上运行：
+        ```bash
+        taskset -c 0 ./tlb 1024 100
+        ```
+    * `-c` 选项后面跟的是允许运行的 CPU 核心列表（从 0 开始编号）。`0` 表示只允许在核心 0 上运行。`0,2` 表示允许在核心 0 或核心 2 上运行。
+* **系统调用 `sched_setaffinity(2)`:** 可以在程序代码内部使用这个系统调用来设置当前进程或指定线程的 CPU 亲和性。
+    * 需要包含头文件 `<sched.h>`。
+    * 使用 `cpu_set_t` 数据类型来表示一个 CPU 核心集合。
+    * 使用 `CPU_ZERO()` 清空集合，`CPU_SET(cpu_index, &mask)` 将指定核心加入集合。
+    * 调用 `sched_setaffinity(pid_t pid, size_t cpusetsize, const cpu_set_t *mask)` 来应用设置（`pid=0` 表示当前进程）。
+
+**示例代码片段 (在 `main` 函数开头添加):**
+
+```c
+#define _GNU_SOURCE // 需要这个宏来启用 cpu_set_t 等
+#include <sched.h>
+#include <pthread.h> // 如果要针对特定线程，或者获取 pthread_self()
+
+// ... 其他 include ...
+
+int main(int argc, char *argv[]) {
+    // ... 参数解析等代码 ...
+
+    // --- 设置 CPU 亲和性，将进程固定到 CPU 核心 0 ---
+    cpu_set_t cpu_mask;           // 定义 CPU 核心集合变量
+    CPU_ZERO(&cpu_mask);          // 清空集合
+    CPU_SET(0, &cpu_mask);        // 将 CPU 核心 0 加入集合
+
+    // 获取当前进程ID (pid=0 也可以代表当前进程)
+    pid_t current_pid = 0; // Use 0 for current process
+
+    // 设置亲和性
+    if (sched_setaffinity(current_pid, sizeof(cpu_set_t), &cpu_mask) == -1) {
+        perror("sched_setaffinity failed");
+        // 可以选择退出，或者仅仅打印警告继续运行
+        // return EXIT_FAILURE;
+        fprintf(stderr, "Warning: Could not pin process to CPU 0. Results might be less accurate.\n");
+    } else {
+        printf("Successfully pinned process to CPU 0.\n");
+    }
+    // --- CPU 亲和性设置结束 ---
+
+
+    // ... 后续的内存分配、预热、计时循环代码 ...
+
+    return EXIT_SUCCESS;
+}
+```
+![在这里插入图片描述](https://i-blog.csdnimg.cn/direct/beabcc97f0fc4c508123e921a979385f.png)
+
+**新测试结果 (已绑定到 CPU 0):**
+* **小工作集:** `./tlb2 1024 100`
+    * 平均每次访问页的耗时: **3.424 ns**
+* **大工作集:** `./tlb2 131072 10`
+    * 平均每次访问页的耗时: **10.759 ns**
+
+**旧结果 (未绑定 CPU):**
+
+* **小工作集:** `./tlb 1024 100`
+    * 平均每次访问页的耗时: **4.662 ns**
+* **大工作集:** `./tlb 131072 10`
+    * 平均每次访问页的耗时: **11.620 ns**
+
+**结果对比与分析:**
+
+1.  **访问时间普遍降低:** 最显著的变化是，无论是小工作集还是大工作集，绑定到 CPU 0 后，平均每次访问页的耗时都**降低**了。
+    * 小工作集：从 4.662 ns 降至 3.424 ns (降低了约 1.24 ns, 约 26.6%)
+    * 大工作集：从 11.620 ns 降至 10.759 ns (降低了约 0.86 ns, 约 7.4%)
+
+2.  **原因解释:** 这完全符合我们之前的讨论。通过 `sched_setaffinity` 将进程固定在 CPU 核心 0 上运行，避免了操作系统调度器将其在不同 CPU 核心之间迁移。
+    * **避免了 TLB 冷启动:** 当进程被迁移到新的 CPU 核心时，新核心的 TLB 对于该进程来说是“冷”的，不包含之前的地址翻译缓存。这会导致初始访问时出现大量 TLB Miss，需要进行代价较高的 Page Walk 来查询页表。绑定 CPU 避免了这种由于迁移造成的额外 TLB Miss。
+    * **可能改善了 CPU 缓存局部性:** 同样，L1/L2 缓存也是 CPU 核心私有的。避免迁移有助于数据和指令更稳定地保留在单个核心的缓存中，提高了缓存命中率。
+    * **结果更稳定、准确:** 消除或减少了因 CPU 迁移带来的性能抖动和开销，使得测量结果更能反映程序在单个核心上稳定运行时的真实性能。
+
+3.  **基本趋势不变:** 尽管绝对时间降低了，但核心的观察结果依然成立：访问远超 TLB 容量的大量页面（131072 页）比访问能较好适应 TLB 的少量页面（1024 页）的**平均访问时间要长得多**（10.759 ns vs 3.424 ns）。这再次证明了 TLB 命中与未命中之间的巨大性能差异。
+
+**总结:**
+
+如果不将测试进程固定到特定的 CPU 核心上，操作系统调度器可能会在不同核心间迁移该进程。由于每个核心拥有独立的 TLB，这种迁移会导致目标核心 TLB 冷启动、TLB Miss 增加，从而污染测量结果，使得测得的平均访问时间偏高，无法准确反映特定核心上稳定运行时的 TLB 性能。使用 `taskset` 或 `sched_setaffinity` 等方法设置 CPU 亲和性是进行此类微基准测试 (micro-benchmarking) 时的重要实践。
