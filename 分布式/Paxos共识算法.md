@@ -86,7 +86,7 @@ def receive_accept(n, value):
     else:
         return False  # 拒绝
 
-
+```
 ## 实际应用
 Paxos 算法在实际应用中通常会有一些变种，如 Multi-Paxos、Fast Paxos 等，以优化性能和适应不同的场景。
 

@@ -136,6 +136,7 @@ class ChordNode:
         import hashlib
         return int(hashlib.sha1(str(key).encode()).hexdigest(), 16) % (2**self.m)
 
+```
 
 ## 应用场景
 DHT 被广泛应用于各种分布式系统中：

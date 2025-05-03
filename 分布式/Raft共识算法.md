@@ -92,7 +92,7 @@ def handle_append_entries(leader_term, prev_log_index, prev_log_term, entries, l
         commit_index = min(leader_commit, log.last_index)
     
     return True
-
+```
 ## 参考资料
 1. Ongaro, D., & Ousterhout, J. (2014). In search of an understandable consensus algorithm. In USENIX Annual Technical Conference (pp. 305-319).
 2. Raft 官方网站： https://raft.github.io/
