@@ -93,8 +93,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "right": {
     "id": "45e60b1809160ad3",
@@ -195,7 +194,7 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "6fd65ad9551ed598",
+  "active": "b212522eb2794bfe",
   "lastOpenFiles": [
     "操作系统/虚拟化",
     "README.md",
