@@ -9,6 +9,7 @@ AlgoVault 是一个综合性的计算机科学知识库，涵盖多个领域的�
 - [虚拟化](./操作系统/虚拟化/)
   - [TLB (Translation Lookaside Buffer)](./操作系统/虚拟化/TLB.md)
   - 缓存淘汰算法
+	- [LFU](./操作系统/虚拟化/缓存淘汰算法/LFU.md)
     - [W-TinyLFU](./操作系统/虚拟化/缓存淘汰算法/W-TinyLFU.md)
   - GC 算法
     - [Java CMS](./操作系统/虚拟化/GC算法/Java/CMS.md)
