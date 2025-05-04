@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "README.md",
+                "file": "操作系统/虚拟化/缓存淘汰算法/LFU.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "README"
+              "title": "LFU"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "README.md",
+                "file": "操作系统/虚拟化/缓存淘汰算法/LFU.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "README 的反向链接列表"
+              "title": "LFU 的反向链接列表"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "README.md",
+                "file": "操作系统/虚拟化/缓存淘汰算法/LFU.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "README 的出链列表"
+              "title": "LFU 的出链列表"
             }
           },
           {
@@ -142,13 +142,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "README.md",
+                "file": "操作系统/虚拟化/缓存淘汰算法/LFU.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "README 的大纲"
+              "title": "LFU 的大纲"
             }
           },
           {
@@ -181,6 +181,8 @@
   },
   "active": "6fd65ad9551ed598",
   "lastOpenFiles": [
+    "README.md",
+    "操作系统/虚拟化/缓存淘汰算法/LFU.md",
     "排序/TimSort.md",
     "操作系统/虚拟化/缓存淘汰算法/W-TinyLFU.md",
     "操作系统/虚拟化/GC算法/Java/CMS.md",
@@ -193,7 +195,6 @@
     "操作系统/虚拟化/GC算法/GO",
     "操作系统/虚拟化/TLB.md",
     "操作系统/虚拟化/GC算法",
-    "README.md",
     "分布式/选举",
     "分布式/选举/Paxos共识算法.md",
     "分布式/选举/Raft共识算法.md",
