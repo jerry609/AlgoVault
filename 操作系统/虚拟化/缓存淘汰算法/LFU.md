@@ -1,6 +1,171 @@
 
 ![optimized-lfu-cache-flowchart.svg](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/optimized-lfu-cache-flowchart.svg)
 
+## 1. `min_freq` - 最小频率
+
+### 访问时机
+
+- 在`put`方法中处理缓存已满情况时，用于确定哪个频率链表中的节点应被淘汰
+- 在`get_node`方法中，需要决定是否更新最小频率时
+
+### 更新时机
+
+- **初始化**：在构造函数中初始化为0（或1，取决于实现）
+- **增加**：在`get_node`方法中，当一个频率为`min_freq`的节点的频率增加后，如果该频率链表变为空，则`min_freq++`
+- **重置**：在`put`方法中添加新节点时，将`min_freq`设为1，因为新节点的初始频率为1
+
+### 更新示例
+
+```cpp
+// get_node方法中，当频率为min_freq的列表变空时
+if (dummy->prev == dummy) { // 链表为空
+    freq_to_dummy.erase(node->freq);
+    delete dummy;
+    if (min_freq == node->freq) {
+        min_freq++; // 增加min_freq
+    }
+}
+
+// put方法中，添加新节点时
+key_to_node[key] = node = new Node(key, val);
+push_front(1, node);
+min_freq = 1; // 重置min_freq
+```
+
+## 2. `capacity` - 缓存容量
+
+### 访问时机
+
+- 在`put`方法中，决定是否需要淘汰节点前检查当前节点数是否达到容量
+- 在`get`和`put`方法开始时，检查容量是否大于0
+
+### 更新时机
+
+- **初始化**：仅在构造函数中设置，之后不再更改
+- 该变量通常是只读的，缓存容量在创建后不会改变
+
+### 访问示例
+
+```cpp
+// 检查容量是否为正数
+if (capacity <= 0) return -1; // 或 return;
+
+// 检查是否达到容量上限
+if (key_to_node.size() == capacity) {
+    // 执行淘汰逻辑
+}
+```
+
+## 3. `key_to_node` - 键到节点的映射
+
+### 访问时机
+
+- 在`get_node`方法中，查找指定key对应的节点
+- 在`put`方法中，检查key是否已存在
+- 在`put`方法中淘汰节点时，从映射中移除被淘汰节点的key
+
+### 更新时机
+
+- **插入**：在`put`方法中添加新节点时
+- **删除**：在`put`方法中淘汰节点时
+- **注意**：`get`方法只读取不修改此映射
+
+### 更新示例
+
+```cpp
+// 查找节点
+auto it = key_to_node.find(key);
+if (it == key_to_node.end()) {
+    return nullptr;
+}
+Node* node = it->second;
+
+// 添加新节点
+key_to_node[key] = node = new Node(key, val);
+
+// 删除节点
+key_to_node.erase(back_node->key);
+```
+
+## 4. `freq_to_dummy` - 频率到链表哑节点的映射
+
+### 访问时机
+
+- 在`get_node`方法中，获取节点当前频率对应的链表头
+- 在`push_front`方法中，获取指定频率的链表头
+- 在`put`方法中淘汰节点时，获取`min_freq`对应的链表头
+
+### 更新时机
+
+- **插入**：在`push_front`方法中发现指定频率的链表不存在时，创建新链表
+- **删除**：在`get_node`方法中，当频率链表变为空时，删除该频率的映射
+- **删除**：在`put`方法淘汰节点后，如果频率链表变为空，删除该频率的映射
+
+### 更新示例
+
+```cpp
+// 创建新频率链表
+auto it = freq_to_dummy.find(freq);
+if (it == freq_to_dummy.end()) {
+    it = freq_to_dummy.emplace(freq, new_list()).first;
+}
+
+// 删除空链表的映射
+if (dummy->prev == dummy) { // 链表为空
+    freq_to_dummy.erase(node->freq);
+    delete dummy;
+}
+```
+
+## 变量访问的并发安全考虑
+
+在多线程环境中，这些变量的访问和更新需要特别注意：
+
+1. **锁的粒度**：
+    
+    - 在Go实现中，我们使用单个读写锁保护所有变量
+    - 对于高性能需求，可以考虑更细粒度的锁策略
+2. **读写分离**：
+    
+    - `get`操作主要是读操作，但会修改节点频率和链表结构
+    - `put`操作既读又写
+    - 可以使用读写锁提高并发性能
+3. **原子性**：
+    
+    - 多个变量的更新需要保持原子性和一致性
+    - 例如，从一个频率链表移动到另一个频率链表的过程必须是原子的
+
+## 变量操作时序图
+
+![lfu-variable-flowchart.svg](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/lfu-variable-flowchart.svg)
+```
+【GET操作】
+1. 访问 key_to_node 查找节点
+2. 如果找到节点:
+   a. 从原频率链表移除节点
+   b. 访问并可能更新 freq_to_dummy
+   c. 检查并可能更新 min_freq
+   d. 增加节点频率并添加到新频率链表
+   e. 返回节点值
+
+【PUT操作 - 更新已有节点】
+1. 访问 key_to_node 查找节点
+2. 如果找到节点:
+   a. 执行类似GET的频率更新操作
+   b. 更新节点值
+
+【PUT操作 - 添加新节点，缓存已满】
+1. 检查 capacity 与 key_to_node.size()
+2. 访问 min_freq 确定要淘汰的频率
+3. 访问 freq_to_dummy[min_freq] 获取链表头
+4. 移除链表尾部节点
+5. 更新 key_to_node 删除被淘汰节点
+6. 可能更新 freq_to_dummy 删除空链表
+7. 创建新节点并添加到 key_to_node
+8. 更新 freq_to_dummy 确保频率1的链表存在
+9. 将新节点添加到频率1的链表
+10. 重置 min_freq = 1
+```
 - c++
 ```c++
 //
