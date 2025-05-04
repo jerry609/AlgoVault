@@ -78,7 +78,8 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 300,
+    "collapsed": true
   },
   "right": {
     "id": "45e60b1809160ad3",
@@ -179,7 +180,7 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "6fd65ad9551ed598",
+  "active": "b212522eb2794bfe",
   "lastOpenFiles": [
     "README.md",
     "操作系统/虚拟化/缓存淘汰算法/LFU.md",
