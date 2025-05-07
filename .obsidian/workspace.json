@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "排序/TimSort.md",
+                "file": "限流算法/令牌桶/Go Rate Limiter.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "TimSort"
+              "title": "Go Rate Limiter"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "排序/TimSort.md",
+                "file": "限流算法/令牌桶/Go Rate Limiter.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "TimSort 的反向链接列表"
+              "title": "Go Rate Limiter 的反向链接列表"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "排序/TimSort.md",
+                "file": "限流算法/令牌桶/Go Rate Limiter.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "TimSort 的出链列表"
+              "title": "Go Rate Limiter 的出链列表"
             }
           },
           {
@@ -142,13 +142,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "排序/TimSort.md",
+                "file": "限流算法/令牌桶/Go Rate Limiter.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "TimSort 的大纲"
+              "title": "Go Rate Limiter 的大纲"
             }
           },
           {
@@ -181,16 +181,19 @@
   },
   "active": "6fd65ad9551ed598",
   "lastOpenFiles": [
-    "强化学习/基础/演员评论家.md",
+    "操作系统/虚拟化/缓存淘汰算法/W-TinyLFU.md",
+    "操作系统/虚拟化/缓存淘汰算法/LFU.md",
     "排序/TimSort.md",
+    "限流算法/令牌桶/Go Rate Limiter.md",
+    "限流算法/令牌桶",
+    "限流算法",
+    "README.md",
+    "强化学习/基础/演员评论家.md",
     "分布式/选举/Raft共识算法.md",
     "分布式/选举/Paxos共识算法.md",
     "操作系统/虚拟化/GC算法/Java/CMS.md",
     "操作系统/虚拟化/GC算法/Java/总结.md",
     "操作系统/虚拟化/GC算法/GO/三色标记法.md",
-    "操作系统/虚拟化/缓存淘汰算法/LFU.md",
-    "操作系统/虚拟化/缓存淘汰算法/W-TinyLFU.md",
-    "README.md",
     "排序",
     "操作系统/虚拟化/缓存淘汰算法",
     "操作系统/虚拟化/GC算法/Java",
@@ -204,8 +207,6 @@
     "分布式",
     "Pasted image 20250503153257.png",
     "操作系统/虚拟化",
-    "强化学习/前沿",
-    "强化学习/进阶",
     "欢迎.md"
   ]
 }
