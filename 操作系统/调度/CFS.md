@@ -1,5 +1,17 @@
+CFS 调度器旨在为每个进程提供 “公平” 的 CPU 份额。“公平” 并不意味着每个进程获得相等的时间，而是指与==它们的优先级成比例的时间==。
 
+![image.png](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250509202546392.png)
 
+- 首先初始化红黑树数据结构
+- 计算进程的虚拟运行时间
+- 将进程按vruntime排序插入红黑树
+- 检查是否有就绪进程
+    - 如果没有，进入睡眠状态
+    - 如果有，选择vruntime最小的进程执行
+- 执行后更新进程的vruntime值
+- 判断时间片是否用完
+    - 如果用完，重新计算vruntime
+    - 如果没用完，继续执行该进程
 ## 1. Linux调度器的发展历程
 
 Linux调度器为了适应不断变化的硬件和应用需求，经历了多次重大变革：
@@ -19,7 +31,7 @@ Linux调度器为了适应不断变化的硬件和应用需求，经历了多次
     *   **优点**: 简化了代码，对桌面交互性有较好的优化。
     *   **缺点**: 在服务器等高负载场景下公平性有所欠缺。
 
--   **CFS调度器** (Completely Fair Scheduler, Linux 2.6.23引入至今):
+-   ==**CFS调度器** (Completely Fair Scheduler, Linux 2.6.23引入至今):==
     *   **机制**: 由Ingo Molnar开发，核心思想是模拟"理想的精确多任务处理器"，确保每个进程获得公平的CPU时间。是目前Linux内核中用于普通进程的主流调度器。
     *   **优点**: 公平性极佳，nice值调整效果符合预期，交互响应和吞吐量之间取得了较好的平衡。
     *   **缺点**: 相对O(1)调度器，单次调度的开销略高（红黑树操作为O(log N)），但在现代CPU上此差异通常不显著。
@@ -132,26 +144,93 @@ struct task_struct {
     struct mm_struct *mm;            /* 内存管理结构，用户进程有，内核线程无 (除非特定情况) */
 };
 ```
+==像这样的大型结构肯定会占用大量内存空间==。鉴于每个进程的内核堆栈体积较小（可通过编译时选项配置，但默认限制为一页，==即 32 位架构严格为 4KB，64 位架构严格为 8KB（操作系统虚拟内存分页的内容）== – 内核堆栈没有扩展或收缩的奢侈能力），以这种浪费的方式使用资源不是很方便。因此，决定在堆栈中放置一个更简单的结构，并带有指向实际task_struct的指针。
+
+```c
+#include <linux/types.h> // 为了 __u32 等类型
+#include <linux/sched.h> // 为了 struct task_struct (假设) 和其他调度相关定义
+#include <asm/current.h> // 为了 addr_limit 定义 (mm_segment_t)
+#include <linux/restart_block.h> // 为了 struct restart_block
+
+struct thread_info {
+    struct task_struct *task;         /* 指向主任务结构体 (task_struct) 的指针 */
+    // struct exec_domain *exec_domain; /* 执行域指针 (在现代内核中可能已废弃或不常用) */
+    __u32 flags;                      /* 低级别线程标志位 (例如 TIF_NEED_RESCHED, TIF_SIGPENDING 等) */
+    __u32 status;                     /* 线程同步状态标志 (例如用于调试、单步执行等) */
+    __u32 cpu;                        /* 当前或上次运行此线程的CPU编号 */
+    int preempt_count;                /* 抢占计数器 (0 表示可抢占, >0 表示禁止抢占) */
+    // int saved_preempt_count;       /* 保存的抢占计数 (在某些特定上下文中可能使用) - 通常 thread_info 中是 preempt_count */
+    mm_segment_t addr_limit;          /* 地址空间限制 (用于区分用户空间/内核空间内存访问, 通常是 USER_DS 或 KERNEL_DS) */
+    struct restart_block restart_block; /* 用于可重启系统调用的数据结构 */
+    void __user *sysenter_return;     /* sysenter/syscall 的用户空间返回地址 (特定于架构，例如x86) */
+    unsigned int uaccess_err : 1;     /* 标志用户空间内存访问 (如copy_to_user/copy_from_user) 是否失败 (1表示失败) */
+    /* ... 其他特定于架构的字段 ... */
+};
+```
+要使用线程，我们需要经常访问它们的task_structs，甚至更频繁地我们需要访问当前正在运行的任务。==循环访问系统上的所有可用进程是不明智的且耗时的。这就是为什么我们有一个名为 current 的宏。由于堆栈或内存页的大小可变，此宏必须与每个体系结构单独实现==。一些架构将指向当前正在运行的进程的指针存储在 register 中，而其他架构由于可用 registers 的数量非常少，因此每次都必须计算它。
 
 ## 4. 优先级与权重
 
 ### 4.1 优先级范围
+内核看到的任务优先级和用户看到的并不相同，在计算和管理优先级时也需要考虑很多方面。Linux 内核中使用 0~139 表示任务的优先级，并且，**值越小，优先级越高**（注意和用户空间的区别）。其中 0~99 保留给实时进程，100~139（映射成 nice 值就是 -20~19）保留给普通进程。
+可以在 <include/linux/sched/prio.h> 头文件中看到内核表示进程优先级的单位（scale）和宏定义（macros），它们用来将用户空间优先级映射到到内核空间。
+```c
+#define MAX_NICE 19  
+#define MIN_NICE -20  
+#define NICE_WIDTH (MAX_NICE - MIN_NICE + 1)  
+…  
+#define MAX_USER_RT_PRIO 100  
+#define MAX_RT_PRIO MAX_USER_RT_PRIO  
+#define MAX_PRIO (MAX_RT_PRIO + NICE_WIDTH)  
+#define DEFAULT_PRIO (MAX_RT_PRIO + NICE_WIDTH / 2)  
+/*  
+* Convert user-nice values [ -20 ... 0 ... 19 ]  
+* to static priority [ MAX_RT_PRIO..MAX_PRIO-1 ],  
+* and back.  
+*/  
+#define NICE_TO_PRIO(nice) ((nice) + DEFAULT_PRIO)  
+#define PRIO_TO_NICE(prio) ((prio) - DEFAULT_PRIO)  
+/*  
+* 'User priority' is the nice value converted to something we  
+* can work with better when scaling various scheduler parameters,  
+* it's a [ 0 ... 39 ] range.  
+*/  
+#define USER_PRIO(p) ((p)-MAX_RT_PRIO)  
+#define TASK_USER_PRIO(p) USER_PRIO((p)->static_prio)  
+#define MAX_USER_PRIO (USER_PRIO(MAX_PRIO))
+```
 
 -   **用户空间nice值**: 通过`nice()`或`setpriority()`系统调用设置。
     -   范围: -20 (最高优先级) 到 +19 (最低优先级)。默认值为0。
+![image.png](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250509194545120.png)
+![image.png](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250509194617692.png)
+
 -   **内核优先级**: 内核内部使用的优先级表示。
     -   范围: 0-139。数值越小，优先级越高。
     -   **0-99**: 实时进程优先级 (RT)。对应`rt_priority`字段。
         -   `SCHED_FIFO`和`SCHED_RR`使用此范围。
-    -   **100-139**: 普通进程优先级 (NORMAL)。由nice值映射而来。
+![](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250509194717375.png)
+	-   **100-139**: 普通进程优先级 (NORMAL)。由nice值映射而来。
         -   `static_prio = MAX_RT_PRIO + nice + 20` (其中`MAX_RT_PRIO`通常是100)。
         -   所以nice -20 对应 `100 - 20 + 20 = 100` (内核优先级)。
         -   nice +19 对应 `100 + 19 + 20 = 139` (内核优先级)。
         -   `prio`和`normal_prio`通常基于`static_prio`。
+![image.png](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250509194744055.png)
 
 ### 4.2 权重映射表 (`prio_to_weight[]`)
 
 CFS不直接使用nice值或内核优先级，而是将它们转换为"权重" (`load_weight`)。权重决定了进程在CPU时间分配中的相对比例。
+优先级会让一些任务比别的任务更重要，因此也会获得更多的 CPU 使用时间。nice 值和时间片的比例关系是通过负载权重（Load Weights）进行维护的，我们可以在 `task_struct->se.load` 中看到进程的权重，定义如下：  
+```c
+struct sched_entity {  
+    struct load_weight load; /* for load-balancing */  
+    …  
+}  
+struct load_weight {  
+    unsigned long weight;  
+    u32 inv_weight;  
+};
+```
 
 ```c
 /*
@@ -173,12 +252,228 @@ static const int prio_to_weight[40] = {
 // prio_to_weight[39] 对应 nice +19
 ```
 
--   **权重设计**: 权重表的设计使得相邻nice值之间的CPU时间分配比例大致为1.25倍。即nice值为N的进程大约获得nice值为N+1进程的1.25倍CPU时间。
--   **NICE_0_LOAD (1024)**: nice值为0的进程的权重是1024，这是一个基准值。
+- **从nice 0到nice -20 (数组索引19到0):**
+    - `prio_to_weight[19]` (nice 0) = `1024`
+    - `prio_to_weight[18]` (nice -1) $\approx 1024 \times 1.25 = 1280$。表中的值为 `1277`。
+    - `prio_to_weight[17]` (nice -2) $\approx 1277 \times 1.25 \approx 1596.25$ (或者 $1024 \times 1.25^2 = 1600$)。表中的值为 `1586`。
+    - ...
+    - `prio_to_weight[0]` (nice -20) $\approx 1024 \times (1.25)^{20} \approx 1024 \times 86.736 \approx 88817.984$。表中的值为 `88761`。
+- **从nice 0到nice +19 (数组索引19到39):**
+    - `prio_to_weight[19]` (nice 0) = `1024`
+    - `prio_to_weight[20]` (nice +1) $\approx 1024 / 1.25 = 819.2$。表中的值为 `820`。
+    - `prio_to_weight[21]` (nice +2) $\approx 820 / 1.25 = 656$ (或者 $1024 / (1.25^2) \approx 655.36$)。表中的值为 `655`。
+    - ...
+    - `prio_to_weight[39]` (nice +19) $\approx 1024 / (1.25)^{19} \approx 1024 / 74.5058 \approx 13.743$。表中的值为 `15`。
+
 -   **"10%规则"**: 这是一个近似的说法。更准确地说，nice值每降低1（优先级提高），获得的CPU时间份额大约增加25% (1.25倍)。反之，nice值每增加1，CPU时间份额大约减少20% (1/1.25 = 0.8倍)。
+
+- 举例说明：
 	- **场景 1**：两个`nice 0`任务，权重均为 1024，各占 50% CPU 时间。
 	- **场景 2**：一个`nice 0`（1024）和一个`nice 5`（335）任务，CPU 时间分配为：
 	    - `1024/(1024+335) ≈ 75%` vs. `335/(1024+335) ≈ 25%`，即`nice 5`任务比`nice 0`少约 66% CPU 时间（因累计多次 10% 变化）。
+
+完整的计算函数定义在 `<kernel/sched/core.c>` 中：
+
+==优先级参考task_struct里面的注释==
+
+```c++
+
+static void set_load_weight(struct task_struct *p)
+{
+    // 1. 计算相对优先级 (prio)
+    // p->static_prio 是任务的静态优先级 (内核内部表示, 100-139 对应 nice -20 到 +19)
+    // MAX_RT_PRIO 通常是 100 (实时优先级的上限)
+    // prio 的范围将是 0 到 39，正好对应 prio_to_weight 和 prio_to_wmult 数组的索引。
+    // 例如:
+    //   nice -20 (static_prio 100) -> prio = 100 - 100 = 0
+    //   nice 0   (static_prio 120) -> prio = 120 - 100 = 20 (注意这里与之前注释的 prio_to_weight[19] 对应 nice 0 有偏差,
+    //                                                       实际prio_to_weight[nice_to_prio(nice)]，而nice_to_prio(0)=20)
+    //   nice +19 (static_prio 139) -> prio = 139 - 100 = 39
+    int prio = p->static_prio - MAX_RT_PRIO;
+
+    // 2. 获取指向任务调度实体负载权重结构的指针
+    // p->se 是 task_struct 中嵌入的 sched_entity (CFS调度实体)
+    // load 指向该实体的 load_weight 结构
+    struct load_weight *load = &p->se.load;
+
+    /*
+     * SCHED_IDLE 任务获得最小权重:
+     */
+    // 3. 处理 SCHED_IDLE 调度策略的任务
+    // SCHED_IDLE 策略用于运行优先级非常低的后台任务，只有在系统完全空闲时才运行。
+    if (p->policy == SCHED_IDLE) {
+        // 为 SCHED_IDLE 任务设置一个预定义的、非常小的权重。
+        // WEIGHT_IDLEPRIO 通常是系统允许的最小权重 (例如 3，而 NICE_0_LOAD 是 1024)。
+        load->weight = scale_load(WEIGHT_IDLEPRIO);
+        // WMULT_IDLEPRIO 是这个最小权重的预计算乘数，用于优化 vruntime 计算。
+        // inv_weight (inverse weight, 权重的倒数) 用于计算 vruntime:
+        // delta_vruntime = delta_exec * NICE_0_LOAD / weight
+        // 为了避免除法，会预计算 NICE_0_LOAD / weight，即 inv_weight (经过适当缩放的)。
+        // 更准确地，vruntime 更新公式可能是 delta_vruntime = (delta_exec * inv_weight) >> WMULT_SHIFT
+        // 其中 WMULT_SHIFT 是一个固定的移位值。
+        load->inv_weight = WMULT_IDLEPRIO;
+        return; // 设置完毕，直接返回
+    }
+
+    // 4. 处理非 SCHED_IDLE 的普通任务 (例如 SCHED_NORMAL, SCHED_BATCH)
+    // 使用前面计算的 prio (0-39)作为索引，从 prio_to_weight 数组中查找对应的权重。
+    load->weight = scale_load(prio_to_weight[prio]);
+    // 同样，从 prio_to_wmult 数组中查找预计算的权重倒数乘数。
+    load->inv_weight = prio_to_wmult[prio];
+}
+```
+### 优先级计算
+
+ `task_struct` 中有几个关键字段用来表示和管理进程的优先级。
+```c
+struct task_struct {
+    // ... 其他众多字段 ...
+
+    int prio;           /* 动态优先级 (Dynamic Priority) */
+    int static_prio;    /* 静态优先级 (Static Priority) */
+    int normal_prio;    /* 普通优先级 (Normal Priority) */
+
+    unsigned int rt_priority; /* 实时优先级 (Real-Time Priority) */
+    unsigned int policy;      /* 调度策略 (Scheduling Policy) */
+
+    const struct sched_class *sched_class; /* 指向调度类的指针 */
+    struct sched_entity se;              /* CFS调度实体 */
+    struct sched_rt_entity rt;           /* 实时调度实体 */
+
+    // ... 其他字段 ...
+};
+```
+
+#### 4.3.1. `static_prio` (静态优先级)
+
+`static_prio` 是由用户通过 `nice()` 或 `setpriority()` 系统调用设置的“nice值”（范围-20到+19，对应普通进程）或者通过 `sched_setscheduler()` 设置的实时优先级（范围0-99，对应实时进程），经过内核映射转换后的内部表示。
+
+*   **对于普通进程 (SCHED_NORMAL, SCHED_BATCH, SCHED_IDLE):**
+    *   内核会将nice值（-20 到 +19）映射到一个内部优先级范围。这个范围通常是 `MAX_RT_PRIO` 到 `MAX_PRIO - 1`。
+    *   `MAX_RT_PRIO` 通常是100（定义了实时优先级的上限）。
+    *   `MAX_PRIO` 通常是140。
+    *   映射公式（近似）：`static_prio = MAX_RT_PRIO + nice + 20`
+        *   `nice -20` (最高普通优先级) -> `static_prio = 100 - 20 + 20 = 100`
+        *   `nice 0` (默认普通优先级) -> `static_prio = 100 + 0 + 20 = 120`
+        *   `nice +19` (最低普通优先级) -> `static_prio = 100 + 19 + 20 = 139`
+    *   **注意**：在内核中，优先级数值越小，实际优先级越高。所以 `static_prio = 100` 比 `static_prio = 139` 优先级高。
+
+*   **对于实时进程 (SCHED_FIFO, SCHED_RR):**
+    *   `static_prio` 直接等于用户设置的实时优先级，范围是 0 到 `MAX_RT_PRIO - 1` (即 0-99)。
+    *   `rt_priority` 字段也会存储这个值。
+    *   例如，实时优先级为50，则 `static_prio = 50`。
+
+**`static_prio` 的特点：**
+*   顾名思义，它是“静态的”，一旦设定，通常不会被调度器自身动态改变（除非用户再次通过系统调用修改它）。
+*   它是计算其他优先级（如`normal_prio`和`prio`）的基础。
+
+#### 4.3.2. `normal_prio` (普通优先级 / 规范化优先级)
+
+`normal_prio` 存放的是基于 `static_prio` 和进程调度策略 (`policy`) 决定的优先级。它的主要作用是提供一个不受“优先级继承”影响的基准优先级。
+
+*   **计算方式：**
+    *   **对于实时进程**：`normal_prio` 通常与其 `static_prio` 相同。
+        ```c
+        // 伪代码示意
+        if (task_is_realtime(p)) { // 检查 p->policy 是否为 SCHED_FIFO 或 SCHED_RR
+            p->normal_prio = p->static_prio;
+        }
+        ```
+    *   **对于普通进程**：`normal_prio` 通常也与其 `static_prio` 相同。
+        ```c
+        // 伪代码示意
+        else { // 普通进程
+            p->normal_prio = p->static_prio;
+        }
+        ```
+    *   所以，在很多情况下，`normal_prio` 就是 `static_prio` 的一个副本。它的存在更多是为了在优先级继承等复杂场景下，保留一个原始的、未被临时修改的基准优先级。
+
+*   **继承性：**
+    *   子进程在 `fork()` 时，会继承父进程的 `normal_prio`。这意味着子进程的初始优先级基准与父进程相同（除非之后被显式修改）。
+    *   `static_prio` 也会被继承。
+
+*   **用途：**
+    *   在O(1)调度器中，当任务从过期队列移回活动队列时，其动态优先级可能会基于`normal_prio`（或`static_prio`）重新计算。
+    *   在CFS调度器中，`normal_prio` 主要用于初始化任务的权重，它间接通过 `static_prio` 计算得出。
+    *   在优先级继承机制（Priority Inheritance Protocol, PIP）中，当一个低优先级任务持有一个被高优先级任务等待的锁时，低优先级任务的**动态优先级 (`prio`)** 可能会被临时提升到高优先级任务的级别。但其`normal_prio`（和`static_prio`）保持不变，以便在锁释放后恢复其原始优先级。
+
+#### 4.3.3. `prio` (动态优先级)
+
+`prio` 是调度器实际使用的优先级，它可能因为多种原因而动态改变，即使 `static_prio` 和 `normal_prio` 保持不变。
+
+*   **初始值：**
+    *   通常情况下，`prio` 的初始值等于其 `normal_prio` (也就意味着常常等于 `static_prio`)。
+    ```c
+    // 伪代码示意 (在任务创建或优先级设置时)
+    p->prio = p->normal_prio;
+    ```
+
+*   **动态变化的场景：**
+    1.  **O(1)调度器的动态调整 (针对普通任务)：**
+        *   O(1)调度器会根据任务的“交互性”动态调整普通任务的`prio`。如果一个任务被认为是交互式的（例如，经常睡眠等待I/O），它的`prio`可能会被临时提高（数值减小）。反之，CPU密集型任务的`prio`可能会被降低（数值增大）。这种调整是基于`static_prio`进行的奖惩。
+    2.  **优先级继承 (Priority Inheritance)：**
+        *   这是`prio`动态变化的一个典型场景。如果任务A（低优先级）持有一个互斥锁，而任务B（高优先级）正在等待这个锁，那么任务A的`prio`会被临时提升到任务B的`prio`级别（或者至少是任务B的`normal_prio`级别），以避免优先级反转问题，确保任务A能尽快执行并释放锁。当锁被释放后，任务A的`prio`会恢复到其`normal_prio`。
+    3.  **实时调度策略中的特殊情况：**
+        *   虽然实时任务的`static_prio`和`normal_prio`是固定的，但在极少数情况下（例如与某些类型的锁或内核机制交互时），其`prio`也可能发生临时变化，但这种情况远不如普通任务或优先级继承常见。
+    4.  **调度器内部的临时提升：**
+        *   系统有时可能会为了特定目的（例如，确保某个关键内核任务能快速运行）而临时提升某个任务的`prio`，使其能够抢占其他高优先级任务。
+
+*   **计算方式的笼统描述：**
+    *   “一旦 `static_prio` 确定，`prio` 字段就可以通过下面的方式计算” —— 这句话比较笼统。更准确地说，`prio` 的**初始值**通常基于`static_prio` (通过`normal_prio`)。之后，它会根据上述动态场景进行调整。
+    *   **没有一个单一的、固定的公式**总是从`static_prio`直接计算出当前的`prio`，因为`prio`的动态性恰恰体现在它会偏离`static_prio`。
+    *   **恢复时的计算：** 当动态调整的因素消失时（例如锁被释放，或者O(1)调度器的交互性奖惩周期结束），`prio`通常会恢复到其`normal_prio`。
+        ```c
+        // 伪代码示意 (例如，在优先级继承结束时)
+        p->prio = p->normal_prio;
+        ```
+
+#### 4.3.4. `rt_priority` (实时优先级)
+
+*   这个字段专门用于存储实时任务的优先级（0-99）。
+*   对于非实时任务，此字段的值通常为0或未定义。
+*   对于实时任务，`rt_priority` 通常与 `static_prio` 和 `normal_prio` 的值（在0-99范围内）一致。
+
+```c
+p->prio = effective_prio(p);  
+// kernel/sched/core.c 中定义了计算方法  
+static int effective_prio(struct task_struct *p)  
+{  
+    p->normal_prio = normal_prio(p);  
+    /*  
+    * If we are RT tasks or we were boosted to RT priority,  
+    * keep the priority unchanged. Otherwise, update priority  
+    * to the normal priority:  
+    */  
+    if (!rt_prio(p->prio))  
+        return p->normal_prio;  
+    return p->prio;  
+}  
+  
+static inline int normal_prio(struct task_struct *p)  
+{  
+    int prio;  
+    if (task_has_dl_policy(p))  
+        prio = MAX_DL_PRIO-1;  
+    else if (task_has_rt_policy(p))  
+        prio = MAX_RT_PRIO-1 - p->rt_priority;  
+    else   
+        prio = __normal_prio(p);  
+    return prio;  
+}  
+  
+static inline int __normal_prio(struct task_struct *p)  
+{  
+    return p->static_prio;  
+}
+```
+#### 总结与关系
+*   **基础是 `static_prio`**：由用户设定（nice值或实时优先级），并映射到内核表示。
+*   **`normal_prio` 是基准**：通常等于 `static_prio`，作为不受优先级继承等临时因素影响的“正常”优先级。子进程继承它。
+*   **`prio` 是实际使用的动态优先级**：以 `normal_prio` 为基础，并可能因为调度器策略（如O(1)的交互性调整）、优先级继承等原因发生动态变化。调度器做调度决策时，主要看的是 `prio`（对于O(1)调度器）或通过 `vruntime` 间接体现的优先级（对于CFS）。
+*   **`rt_priority` 专用于实时任务**：明确记录其实时优先级等级。
+
+在现代CFS调度器中，对于普通进程，`static_prio` 和 `normal_prio` 主要用于计算任务的**权重 (`load_weight`)**，这个权重再用于计算`vruntime`的增长。CFS不太直接使用`prio`字段进行排序决策，而是依赖`vruntime`。但`prio`字段在与旧代码、某些内核子系统或特定调度场景（如与实时任务交互）中仍可能扮演角色。对于实时任务，这些优先级字段仍然直接重要。
+
 ## 5. CFS关键算法实现
 
 ### 5.1 虚拟运行时间计算 (`update_curr`)
@@ -513,8 +808,11 @@ void scheduler_tick(void)
     *   调用`check_preempt_tick()`检查当前任务是否应该被抢占。这基于任务是否已运行了足够长的时间（相对于其应得的时间片，该时间片由`sched_latency_ns`、`sched_min_granularity_ns`和任务权重动态计算得出）。如果需要抢占，则设置`TIF_NEED_RESCHED`标志。
 
 ## 7. CFS与其他调度方案对比
-
+这一节内容
+[https://ifaceless.github.io/2019/11/17/guide-to-linux-scheduler/](https://ifaceless.github.io/2019/11/17/guide-to-linux-scheduler/)
+这篇博客写的很详细就不再重复造车了。
 ### 7.1 CFS vs O(1)调度器
+![image.png](https://obsidian-1311563466.cos.ap-guangzhou.myqcloud.com/obsidian/20250509201542956.png)
 
 -   **数据结构**:
     -   O(1): 使用两个优先级数组（活动队列、过期队列），每个优先级对应一个链表。
@@ -680,6 +978,3 @@ CFS调度器是Linux内核中一个持续演进和优化的组件。未来的发
 -   **更大规模系统的可扩展性**: 进一步提升在数百甚至数千核心系统上的调度性能。
 -   **与虚拟化、容器技术的深度集成**: 提供更细粒度和隔离性的调度策略。
 
-CFS通过模拟"理想的多任务处理器"，在理论上的公平性和实际系统的复杂性之间取得了出色的平衡，是现代操作系统调度器设计的典范之一。
-
----
