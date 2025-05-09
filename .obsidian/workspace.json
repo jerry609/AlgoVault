@@ -13,15 +13,30 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "限流算法/令牌桶/Go Rate Limiter.md",
+                "file": "排序/TimSort.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Go Rate Limiter"
+              "title": "TimSort"
+            }
+          },
+          {
+            "id": "45dd0281e8480d68",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "操作系统/调度/CFS.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "CFS"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -94,7 +109,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "限流算法/令牌桶/Go Rate Limiter.md",
+                "file": "操作系统/调度/CFS.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +119,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Go Rate Limiter 的反向链接列表"
+              "title": "CFS 的反向链接列表"
             }
           },
           {
@@ -113,12 +128,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "限流算法/令牌桶/Go Rate Limiter.md",
+                "file": "操作系统/调度/CFS.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Go Rate Limiter 的出链列表"
+              "title": "CFS 的出链列表"
             }
           },
           {
@@ -142,13 +157,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "限流算法/令牌桶/Go Rate Limiter.md",
+                "file": "操作系统/调度/CFS.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Go Rate Limiter 的大纲"
+              "title": "CFS 的大纲"
             }
           },
           {
@@ -179,11 +194,17 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "6fd65ad9551ed598",
+  "active": "b212522eb2794bfe",
   "lastOpenFiles": [
+    "轮询/NGINX.md",
+    "操作系统/调度/CFS.md",
+    "未命名.md",
+    "轮询",
+    "操作系统/调度",
+    "排序/TimSort.md",
     "操作系统/虚拟化/缓存淘汰算法/W-TinyLFU.md",
     "操作系统/虚拟化/缓存淘汰算法/LFU.md",
-    "排序/TimSort.md",
+    "操作系统/虚拟化/GC算法/GO/三色标记法.md",
     "限流算法/令牌桶/Go Rate Limiter.md",
     "限流算法/令牌桶",
     "限流算法",
@@ -193,7 +214,6 @@
     "分布式/选举/Paxos共识算法.md",
     "操作系统/虚拟化/GC算法/Java/CMS.md",
     "操作系统/虚拟化/GC算法/Java/总结.md",
-    "操作系统/虚拟化/GC算法/GO/三色标记法.md",
     "排序",
     "操作系统/虚拟化/缓存淘汰算法",
     "操作系统/虚拟化/GC算法/Java",
@@ -204,9 +224,7 @@
     "分布式/分布式哈希表 (DHT).md",
     "分布式/raft.md",
     "分布式/paxos.md",
-    "分布式",
     "Pasted image 20250503153257.png",
-    "操作系统/虚拟化",
     "欢迎.md"
   ]
 }
