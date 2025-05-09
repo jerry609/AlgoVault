@@ -1,10 +1,4 @@
-Okay, this is a solid foundation. Let's enrich these notes, adding more context, explanations, and details to each section while maintaining the structure and accuracy.
 
----
-
-# Linux CFS调度器源码分析笔记
-
-论文《A complete guide to Linux process scheduling》提供了对Linux调度机制的深入解析，结合论文内容和您之前的问题，我将着重对Linux完全公平调度器(CFS)的源码实现进行详细分析。
 
 ## 1. Linux调度器的发展历程
 
@@ -182,7 +176,9 @@ static const int prio_to_weight[40] = {
 -   **权重设计**: 权重表的设计使得相邻nice值之间的CPU时间分配比例大致为1.25倍。即nice值为N的进程大约获得nice值为N+1进程的1.25倍CPU时间。
 -   **NICE_0_LOAD (1024)**: nice值为0的进程的权重是1024，这是一个基准值。
 -   **"10%规则"**: 这是一个近似的说法。更准确地说，nice值每降低1（优先级提高），获得的CPU时间份额大约增加25% (1.25倍)。反之，nice值每增加1，CPU时间份额大约减少20% (1/1.25 = 0.8倍)。
-
+	- **场景 1**：两个`nice 0`任务，权重均为 1024，各占 50% CPU 时间。
+	- **场景 2**：一个`nice 0`（1024）和一个`nice 5`（335）任务，CPU 时间分配为：
+	    - `1024/(1024+335) ≈ 75%` vs. `335/(1024+335) ≈ 25%`，即`nice 5`任务比`nice 0`少约 66% CPU 时间（因累计多次 10% 变化）。
 ## 5. CFS关键算法实现
 
 ### 5.1 虚拟运行时间计算 (`update_curr`)
