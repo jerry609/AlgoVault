@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "操作系统/调度/CFS.md",
+                "file": "排序/红黑树.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "CFS"
+              "title": "红黑树"
             }
           }
         ]
@@ -78,8 +78,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "right": {
     "id": "45e60b1809160ad3",
@@ -95,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "操作系统/调度/CFS.md",
+                "file": "排序/红黑树.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -105,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "CFS 的反向链接列表"
+              "title": "红黑树 的反向链接列表"
             }
           },
           {
@@ -114,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "操作系统/调度/CFS.md",
+                "file": "排序/红黑树.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "CFS 的出链列表"
+              "title": "红黑树 的出链列表"
             }
           },
           {
@@ -143,13 +142,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "操作系统/调度/CFS.md",
+                "file": "排序/红黑树.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "CFS 的大纲"
+              "title": "红黑树 的大纲"
             }
           },
           {
@@ -182,8 +181,10 @@
   },
   "active": "45dd0281e8480d68",
   "lastOpenFiles": [
-    "轮询/NGINX.md",
     "操作系统/调度/CFS.md",
+    "排序/红黑树.md",
+    "未命名",
+    "轮询/NGINX.md",
     "未命名.md",
     "轮询",
     "操作系统/调度",
@@ -206,7 +207,6 @@
     "操作系统/虚拟化/GC算法/GO",
     "操作系统/虚拟化/TLB.md",
     "操作系统/虚拟化/GC算法",
-    "分布式/选举",
     "分布式/分布式哈希表 (DHT).md",
     "分布式/raft.md",
     "分布式/paxos.md",
